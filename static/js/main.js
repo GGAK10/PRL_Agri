@@ -240,20 +240,17 @@ function addLeafletAnalysis(tileUrl) {
     });
 
 
-    window.cesiumViewer = new Cesium.Viewer('cesiumContainer', { 
+    // Disable Cesium Ion completely - we don't need it for 2D mode
+Cesium.Ion.defaultAccessToken = null;
+window.cesiumViewer = new Cesium.Viewer('cesiumContainer', { 
   imageryProvider: false, 
   terrainProvider: new Cesium.EllipsoidTerrainProvider(),
   animation: false,
-  timeline: false
+  timeline: false,
+  baseLayerPicker: false,
+  geocoder: false
 });
-    if (Cesium.createWorldTerrain) {
-        try { cesiumViewer.terrainProvider = Cesium.createWorldTerrain(); } catch (err) {}
-    } else if (Cesium.CesiumTerrainProvider) {
-        cesiumViewer.terrainProvider = new Cesium.CesiumTerrainProvider({ url: 'https://assets.cesium.com/1/' });
-    } else {
-        cesiumViewer.terrainProvider = new Cesium.EllipsoidTerrainProvider();
-    }
-
+cesiumViewer.scene.globe.enableLighting = false;
     document.getElementById('runBtn').onclick = function(){ if (!aoiGeojson) {showToast("Draw AOI first!");return;} runAnalysis(); };
     document.getElementById('downloadBtn').onclick = function(){ if (!aoiGeojson) {showToast("Draw AOI first!");return;} downloadAOI(); };
     document.getElementById('switchViewBtn').onclick = function () {
