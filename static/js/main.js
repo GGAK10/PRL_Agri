@@ -3,7 +3,7 @@ let miniTsChart = null;
 window.currentTileLayer = null;
 window.opacityValue = 0.7;
 window.aoiGeojson = null;
-
+Cesium.Ion.defaultAccessToken = ""; // disable Ion, we don't need it
 function showToast(message, ms=2300) {
     let toast = document.getElementById('toast');
     toast.textContent = message;
@@ -240,7 +240,12 @@ function addLeafletAnalysis(tileUrl) {
     });
 
 
-    window.cesiumViewer = new Cesium.Viewer('cesiumContainer', { imageryProvider: false, shouldAnimate: true });
+    window.cesiumViewer = new Cesium.Viewer('cesiumContainer', { 
+  imageryProvider: false, 
+  terrainProvider: new Cesium.EllipsoidTerrainProvider(),
+  animation: false,
+  timeline: false
+});
     if (Cesium.createWorldTerrain) {
         try { cesiumViewer.terrainProvider = Cesium.createWorldTerrain(); } catch (err) {}
     } else if (Cesium.CesiumTerrainProvider) {
