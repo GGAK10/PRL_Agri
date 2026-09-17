@@ -227,14 +227,49 @@ def stats_csv():
 
 @app.route("/search", methods=["GET"])
 def search_place():
-    
-    query = request.args.get('q','')
-    url = f"https://nominatim.openstreetmap.org/search?format=json&q={query}&limit=1"
-    resp = headers = {     "User-Agent": "PRL_Agri/1.0" }  resp = requests.get(     url,     headers=headers,     timeout=10 )
-    if resp.ok and resp.json():
-        place = resp.json()[0]
-        return jsonify({"lat":place.get("lat"), "lon":place.get("lon"), "display_name":place.get("display_name")})
-    return jsonify({"error":"Location not found"}), 404
+    query = request.args.get("q", "").strip()
+
+    if not query:
+        return jsonify({"error": "Search query is required"}), 400
+
+    url = "https://nominatim.openstreetmap.org/search"
+
+    params = {
+        "format": "json",
+        "q": query,
+        "limit": 1
+    }
+
+    headers = {
+        "User-Agent": "PRL_Agri/1.0"
+    }
+
+    try:
+        resp = requests.get(
+            url,
+            params=params,
+            headers=headers,
+            timeout=10
+        )
+
+        if resp.ok:
+            results = resp.json()
+
+            if results:
+                place = results[0]
+
+                return jsonify({
+                    "lat": place.get("lat"),
+                    "lon": place.get("lon"),
+                    "display_name": place.get("display_name")
+                })
+
+        return jsonify({"error": "Location not found"}), 404
+
+    except requests.RequestException as ex:
+        return jsonify({
+            "error": f"Location search failed: {str(ex)}"
+        }), 502
 
 @app.route("/timeseries", methods=["POST"])
 def timeseries():
