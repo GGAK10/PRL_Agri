@@ -230,7 +230,7 @@ def search_place():
     
     query = request.args.get('q','')
     url = f"https://nominatim.openstreetmap.org/search?format=json&q={query}&limit=1"
-    resp = requests.get(url)
+    resp = headers = {     "User-Agent": "PRL_Agri/1.0" }  resp = requests.get(     url,     headers=headers,     timeout=10 )
     if resp.ok and resp.json():
         place = resp.json()[0]
         return jsonify({"lat":place.get("lat"), "lon":place.get("lon"), "display_name":place.get("display_name")})
