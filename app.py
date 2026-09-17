@@ -1,4 +1,5 @@
 from flask import Flask, render_template, request, jsonify, Response
+import os
 import ee
 import json
 import csv
@@ -6,7 +7,8 @@ from io import StringIO
 import requests
 SERVICE_ACCOUNT = os.environ["GEE_SERVICE_ACCOUNT"]
 KEY_FILE = "/etc/secrets/service_account_key.json"
-
+if not SERVICE_ACCOUNT:
+    raise RuntimeError("GEE_SERVICE_ACCOUNT env var not set")
 credentials = ee.ServiceAccountCredentials(
     SERVICE_ACCOUNT,
     KEY_FILE
