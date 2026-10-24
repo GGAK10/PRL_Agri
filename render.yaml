@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: prithvi-dashboard
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --workers 1 --threads 8 --worker-class gthread --timeout 120 --graceful-timeout 30 --bind 0.0.0.0:$PORT
+    healthCheckPath: /healthz
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: GEE_KEY_FILE
+        value: /etc/secrets/service_account_key.json
+      - key: MAX_AOI_HA
+        value: "3000"
+      - key: MAX_DAYS
+        value: "250"
+      - key: GEE_SERVICE_ACCOUNT
+        sync: false
+      - key: GEE_PROJECT_ID
+        sync: false
+      - key: APP_USER
+        sync: false
+      - key: APP_PASS
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: NOMINATIM_EMAIL
+        sync: false
