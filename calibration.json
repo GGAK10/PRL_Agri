@@ -1,0 +1,9 @@
+{
+  "_readme": "Add per-crop blocks, e.g. \"rice\": {...}. Models appear in the UI only when present here.",
+  "_example_rice": {
+    "NDVI_REG":  {"a": 0.0, "b": 0.0},
+    "INDVI_REG": {"a": 0.0, "b": 0.0},
+    "LUE_CAL":   {"k": 0.0},
+    "MULTI":     {"intercept": 0.0, "coef": {"ndvi_max": 0.0, "indvi": 0.0, "ndmi_mean": 0.0, "bsi_pre": 0.0}}
+  }
+}
