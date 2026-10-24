@@ -1,185 +1,145 @@
 <!DOCTYPE html>
-<html>
-
+<html lang="en">
 <head>
-    <title>Dashboard – PRITHVI RESEARCH LABS</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css"/>
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
-    <script src="https://cesium.com/downloads/cesiumjs/releases/1.114/Build/Cesium/Cesium.js"></script>
-    <link href="https://cesium.com/downloads/cesiumjs/releases/1.114/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PRITHVI · Paddy Intelligence</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&family=Noto+Sans+Tamil&family=Noto+Sans+Telugu&family=Noto+Sans+Kannada&family=Noto+Sans+Malayalam&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
 </head>
-<body>
-<div id="container">
-    <div id="sidebar" class="sidebar-collapsed">
-        <button id="sidebarToggle" title="Menu"><span id="chevron" class="chevron chevron-right">&#x25B6;</span></button>
-        <div id="sidebarContent">
-            <div style="text-align:center;padding:9px 0;">
-                <span style="display:inline-block;vertical-align:middle;">
-                    <svg height="32" width="32" viewBox="0 0 32 32">
-                        <ellipse cx="16" cy="20" rx="13" ry="9" fill="#43d375"/>
-                        <path d="M16,6 Q18,17 16,30 Q14,17 16,6" fill="#328b42"/>
-                        <circle cx="16" cy="12" r="4" fill="#aee99b"/>
-                    </svg>
-                </span>
-                <span class="sidebar-title">PRITHVI Dashboard</span>
-            </div>
-            <div class="compact-form-row">
-                <label for="indexSelect" title="Select analysis layer">Layer:</label> 
-                <select id="indexSelect">
-                    <option value="SATELLITE">True Color Satellite</option>
-                    <option value="NDVI">NDVI (Vegetation)</option>
-                    <option value="YIELD">Crop Yield (t/ha)</option>           
-                    <option value="BSI">BSI (Bare Soil)</option>
-                    <option value="NDMI">NDMI (Canopy Moisture)</option>
-                    <option value="SAVI">SAVI (Adjusted Veg)</option>
-                    <option value="NDSI">NDSI (Snow/Moisture)</option>
-                </select>
-                <label for="colorRamp" title="Color ramp for map">Colors:</label>
-                <select id="colorRamp">
-                    <option value="default">Viridis</option>
-                    <option value="redgreen">Red-Green</option>
-                    <option value="bluered">Blue-Red</option>
-                    <option value="earth">Earth</option>
-                </select>
-                </div>
-            <div class="compact-form-row">
-            <label title="Min value for color scale">Min:</label>
-            <input type="number" id="visMin" value="0.2" step="0.1" style="width:50px;">
-            <label title="Max value for color scale">Max:</label>
-            <input type="number" id="visMax" value="0.8" step="0.1" style="width:50px;">
-            </div>
+<body class="sb-open">
+<div id="app">
 
-            <div id="indexGuidance" style="margin-top: 8px; padding: 10px; background: rgba(67, 211, 117, 0.1); border-left: 3px solid #43d375; font-size: 12px; line-height: 1.4; color: #b4efbb;">
-              <strong>Tip:</strong> Set Min to 0.25 to hide non-vegetated areas.
-            </div>
-            <div class="compact-form-row">
-                <label for="startDate">From</label>
-                <input type="date" id="startDate" value="2024-01-01">
-                <label for="endDate">to</label>
-                <input type="date" id="endDate" value="2024-01-30">
-            </div>
-               <div class="compact-form-row">
-     <label for="cropSelect">Crop</label>
-     <select id="cropSelect">
-       {% for c in crops %}<option value="{{ c }}">{{ c|capitalize }}</option>{% endfor %}
-     </select>
-     <label for="modelSelect">Model</label>
-     <select id="modelSelect">
-       <option value="LUE">LUE (default)</option>
-       <option value="NDVI_REG">NDVI regression</option>
-       <option value="INDVI_REG">Integrated NDVI regression</option>
-       <option value="LUE_CAL">LUE calibrated</option>
-       <option value="MULTI">Multi-variable (soil)</option>
-     </select>
-   </div>
-   <div class="compact-form-row">
-     <label><input type="checkbox" id="cropMask"> Crop mask (ESA WorldCover)</label>
-   </div>
-   <div class="compact-form-row">
-     <label><input type="checkbox" id="hideBare"> Hide NDVI &lt; 0.25</label>
-   </div>
-   <div style="font-size:12px;color:#b4efbb;">For Yield: set From = sowing date, To = harvest date.</div>
-            <div style="margin-top:12px; margin-bottom:8px;">
-            <label><input type="checkbox" id="toggleAnalysisLayer" checked> Show Analysis Layer</label>
-            </div> 
-            <div class="compact-form-row" style="margin-top:10px;">
-                <label style="flex: 1;">Live Trend Chart</label>
-                <input type="checkbox" id="toggleLiveChart">
-            </div>
-            <div class="sidebar-actions">
-                <button id="statsBtn" title="Show statistics & charts">📊 Stats</button>
-                <button id="aboutBtn" title="About/Help">❓ About</button>
-            </div>
-                     
-            <div style="margin-top:10px;">
-                <label for="opacitySlider">Transparency</label>
-                <input type="range" min="0" max="100" value="70" step="1" id="opacitySlider">
-                <span id="opacityValue">0.70</span>
-            </div>
-            
-        
-        </div>
+  <aside id="sidebar">
+    <div class="sb-head">
+      <svg width="34" height="34" viewBox="0 0 32 32" aria-hidden="true">
+        <path d="M16 3c1 6 1 12 0 26" stroke="#e6b84a" stroke-width="2" fill="none"/>
+        <ellipse cx="11" cy="10" rx="3" ry="6" transform="rotate(-25 11 10)" fill="#e6b84a"/>
+        <ellipse cx="21" cy="12" rx="3" ry="6" transform="rotate(25 21 12)" fill="#e6b84a"/>
+        <ellipse cx="11" cy="19" rx="3" ry="6" transform="rotate(-25 11 19)" fill="#4caf6a"/>
+        <ellipse cx="21" cy="21" rx="3" ry="6" transform="rotate(25 21 21)" fill="#4caf6a"/>
+      </svg>
+      <div><div class="brand">PRITHVI</div><div class="sub">Paddy Intelligence · South India</div></div>
+      <select id="langSelect" title="Language">
+        <option value="en">EN</option><option value="ta">தமிழ்</option><option value="te">తెలుగు</option>
+        <option value="kn">ಕನ್ನಡ</option><option value="ml">മലയാളം</option>
+      </select>
     </div>
-    
-    <div id="onMapChartContainer" class="map-overlay-panel" style="display:none; position:absolute; bottom:120px; left:50px; z-index:2000; background:rgba(24,26,36,0.95); padding:12px; border-radius:12px; width:300px; border:1px solid #43d375; box-shadow: 0 8px 32px rgba(0,0,0,0.5);">
-    <div id="onMapChartContainerHeader" style="cursor: move; border-bottom: 1px solid #43d375; padding-bottom: 8px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
-        <span style="color:#43d375; font-weight: bold; font-size: 14px; letter-spacing: 0.5px;">FIELD ANALYTICS</span>
-        <span id="closeOverlay" style="cursor:pointer; color: white; font-size: 20px; line-height: 1;">&times;</span>
-    </div>
-    <div id="mapOverlayBody">
-        <div id="statsArea" style="font-size: 13px; color: white; margin-bottom: 12px; line-height: 1.4;">
-            Select an AOI and click Run
-        </div>
-        
-        <div style="height: 150px; width: 100%; position: relative; margin-bottom: 12px;">
-            <canvas id="miniTsChart"></canvas>
-        </div>
-        
-        <div style="display:flex; gap:8px;">
-            <button id="statsDownloadBtn" style="flex:1; background: #333; color: #43d375; border: 1px solid #43d375; padding: 6px; border-radius: 4px; font-size: 11px; cursor: pointer;">CSV</button>
-            <button id="chartDownloadBtn" style="flex:1; background:#43d375; color:#1a1a1a; border:none; padding: 6px; border-radius: 4px; font-weight:bold; font-size:11px; cursor:pointer;">IMG</button>
-        </div>
-    </div>
-</div>
 
+    <section class="sec"><div id="aoiInfo" class="aoi">Draw a field with the polygon or rectangle tool.</div></section>
 
+    <section class="sec">
+      <label for="seasonSelect" data-i18n="season">Season</label>
+      <select id="seasonSelect"></select>
+      <div class="row2">
+        <input type="date" id="startDate" aria-label="From">
+        <input type="date" id="endDate" aria-label="To">
+      </div>
+      <div class="hint">Start a little before transplanting so flooding is captured. For yield: From = sowing/transplanting, To = harvest.</div>
+    </section>
+
+    <section class="sec">
+      <label for="indexSelect" data-i18n="layer">Layer</label>
+      <select id="indexSelect">
+        <option value="SATELLITE">True colour</option>
+        <option value="NDVI">NDVI (greenness)</option>
+        <option value="EVI">EVI (dense paddy)</option>
+        <option value="YIELD" selected>Crop yield (t/ha)</option>
+        <option value="NDMI">NDMI (canopy moisture)</option>
+        <option value="SAVI">SAVI</option>
+        <option value="BSI">BSI (bare soil)</option>
+        <option value="NWDWI">Flooding / transplanting (NWDWI)</option>
+        <option value="SAR_VH">Radar VH (cloud-free)</option>
+      </select>
+      <div class="row2">
+        <select id="cropSelect" aria-label="Crop">{% for c in crops %}<option value="{{ c }}">{{ c|capitalize }}</option>{% endfor %}</select>
+        <select id="modelSelect" aria-label="Model"><option value="LUE">LUE (default)</option></select>
+      </div>
+      <label class="chk"><input type="checkbox" id="cropMask" checked> Crop / paddy mask</label>
+      <label class="chk"><input type="checkbox" id="hideBare"> Hide NDVI &lt; 0.25</label>
+      <div id="guide" class="guide"></div>
+    </section>
+
+    <section class="sec">
+      <select id="rampSelect">
+        <option value="paddy">Paddy growth (soil → green)</option><option value="viridis">Viridis</option>
+        <option value="redgreen">Red–Green</option><option value="bluered">Blue–Red</option><option value="earth">Earth</option>
+      </select>
+      <div class="row2">
+        <input type="number" id="visMin" step="0.1" aria-label="Min">
+        <input type="number" id="visMax" step="0.1" aria-label="Max">
+      </div>
+      <label for="opacity">Transparency <span id="opacityVal">0.70</span></label>
+      <input type="range" id="opacity" min="0" max="100" value="70">
+      <label class="chk"><input type="checkbox" id="toggleLayer" checked> Show analysis layer</label>
+      <button id="aboutBtn" class="link">About &amp; data sources</button>
+    </section>
+  </aside>
+
+  <div id="stage">
     <div id="map"></div>
-    <div id="map-chart-container" style="position:absolute; bottom:120px; right:20px; width:300px; background:rgba(24,26,36,0.9); z-index:1000; border-radius:8px; padding:10px; display:none; border:1px solid #43d375;">
-    <canvas id="mapTsChart"></canvas>
+    <div id="cesiumContainer"></div>
+
+    <button id="sidebarToggle" title="Menu">☰</button>
+
+    <div id="searchPanel">
+      <input id="searchBox" type="text" placeholder="Place or lat,lng" autocomplete="off">
+      <button id="searchBtn" title="Go">🔍</button>
     </div>
-    <div id="cesiumContainer" style="display:none;"></div>
-    <div id="fab-bar">
-        <button id="runBtn" class="fab" title="Analyze AOI">Run</button>
-        <button id="downloadBtn" class="fab" title="Download">⬇</button>
-        <button id="switchViewBtn" class="fab" title="Toggle 2d/3d">3D</button>
+
+    <div id="fabBar">
+      <button id="runBtn" class="pill primary"><span data-i18n="run">Run</span></button>
+      <button id="analyticsBtn" class="pill"><span data-i18n="analytics">Analytics</span></button>
+      <button id="downloadBtn" class="pill"><span data-i18n="download">Download</span></button>
+      <button id="viewBtn" class="pill">3D</button>
     </div>
-    <div id="search-panel" >
-        <input type="text" id="searchBox" placeholder="Place or Lat,Lng" autocomplete="off">
-        <button id="searchBtn" title="Go">🔍</button>
+
+    <div id="legend" class="legend">
+      <div id="legendTitle" class="legend-title"></div>
+      <div id="legendBar" class="legend-bar"></div>
+      <div class="legend-scale"><span id="legendMin"></span><span id="legendMax"></span></div>
     </div>
-    <div id="ai-chat-launch" title="Chat with Earth AI">💬</div>
-<div id="ai-chat-panel">
-  <div id="ai-chat-bar">
-    <span>PRITHVI AI Assistant</span>
-    <span id="ai-chat-close" title="Close">&times;</span>
-  </div>
-  <div id="ai-chat-messages"></div>
-  <div id="ai-chat-input-row">
-    <input id="ai-chat-input" type="text" placeholder="Ask about NDVI, Sentinel, tools..." autocomplete="off"/>
-    <button id="ai-chat-send" title="Send">⮞</button>
+
+    <div id="panel" class="panel" hidden>
+      <div id="panelHead" class="panel-head"><span>FIELD ANALYTICS</span><button id="panelClose" aria-label="Close">×</button></div>
+      <div id="kpis" class="kpi-grid"></div>
+      <div id="seriesBox" hidden><div class="chart-wrap"><canvas id="tsChart"></canvas></div></div>
+      <div id="peakInfo" class="hint"></div>
+      <div class="panel-actions">
+        <button id="csvBtn">CSV</button><button id="imgBtn">PNG</button><button id="compareBtn">Compare models</button>
+      </div>
+      <div id="compareBox"></div>
+    </div>
+
+    <button id="chatBtn" class="chat-fab" title="Ask PRITHVI">💬</button>
+    <div id="chatPanel" class="chat" hidden>
+      <div class="chat-head"><span>PRITHVI Assistant</span><button id="chatClose" aria-label="Close">×</button></div>
+      <div id="chatLog" class="chat-log"></div>
+      <div class="chat-row"><input id="chatInput" placeholder="Ask about this field…" autocomplete="off"><button id="chatSend">➤</button></div>
+    </div>
   </div>
 </div>
 
-    <div id="hoverValue" class="hover-value-box" style="display:none;pointer-events:none;"></div>
-    <div id="copyright-footer">
-        &copy; 2026 PRITHVI RESEARCH LABS
-    </div>
-    <div id="toast" class="toast"></div>
-    <div id="spinner" class="spinner-overlay" style="display: none;">
-        <div class="spinner"></div>
-        <div class="spinner-msg" id="spinner-msg"></div>
-    </div>
-    <!-- Modal for stats and time series -->
+<div id="toast" class="toast" role="status"></div>
+<div id="spinner" class="spinner-overlay" style="display:none"><div class="spinner"></div><div id="spinnerMsg" class="spinner-msg"></div></div>
 
-    <div id="aboutModal" class="modal">
-        <div class="modal-content">
-            <span class="close-modal" id="closeAboutModal">&times;</span>
-            <div style="font-weight:bold;margin-bottom:8px;">About</div>
-            <p style="font-size:15px;line-height:1.7;">
-                This dashboard enables AOI-based time-series vegetation, soil, and anomaly mapping<br>
-                <b>Indices:</b> NDVI, SAVI, BSI, NDSI<br>
-                <b>Estimate/Derive Yield from the Satellite Imagery</b><br>
-                <b>Data:</b> Sentinel-2 (10m, open)<br>
-                <b>Features:</b> Draw AOI, set dates, run analysis, download geotiff, search locations, dynamic overlays, real-time stats.<br>
-            </p>
-        </div>
-    </div>
+<div id="aboutModal" class="modal" hidden>
+  <div class="modal-box">
+    <button id="aboutClose" class="modal-x" aria-label="Close">×</button>
+    <h3>About</h3>
+    <p>Sentinel-2 (10 m optical), Sentinel-1 (radar), ERA5-Land (radiation, temperature) and ESA WorldCover via Google Earth Engine.</p>
+    <p><b>Yield</b> is a light-use-efficiency estimate unless a calibrated model is selected. Default parameters are generic starting values: calibrate against local crop-cutting data before using numbers operationally.</p>
+    <p><b>Paddy mask</b> keeps pixels that were flooded and later green during the season (NWDWI ≤ 0, then NDVI ≥ 0.5).</p>
+  </div>
 </div>
-<script src="{{ url_for('static', filename='js/main.js') }}"></script>    
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
 </html>
