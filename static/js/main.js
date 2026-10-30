@@ -5,8 +5,12 @@
 const $ = (id) => document.getElementById(id);
 const val = (id) => $(id).value;
 const num = (id) => { const x = parseFloat(val(id)); return Number.isFinite(x) ? x : undefined; };
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const unitOf = (i) => (i === "YIELD" ? " t/ha" : i === "SAR_VH" ? " dB" : "");
+const throttle = (fn, ms) => { let t = 0; return (...a) => { const n = Date.now(); if (n - t >= ms) { t = n; fn(...a); } }; };
 const S = { aoi: null, map: null, drawn: null, layers: null, layer: null, opacity: 0.7, chart: null, last: null,
-            busy: false, viewer: null, tileUrl: null, cesiumLayer: null, is3d: false, lang: "en", valueCtrl: null };
+            busy: false, viewer: null, tileUrl: null, cesiumLayer: null, is3d: false, lang: "en", valueCtrl: null,
+            soil: null, soilLayer: null, raster: null, rasterCtrl: null };
 
 /* ---------- i18n (have a native speaker review before release) ---------- */
 const I18N = {
@@ -53,10 +57,11 @@ async function api(url, body, { timeout = 100000, signal, method = "POST" } = {}
   } finally { clearTimeout(timer); }
 }
 
+const fert = () => ({ n: num("fertN") ?? 0, p2o5: num("fertP") ?? 0, k2o: num("fertK") ?? 0 });
 function payload(extra = {}) {
   return { aoi: S.aoi, index: val("indexSelect"), startDate: val("startDate"), endDate: val("endDate"),
     crop: val("cropSelect"), model: val("modelSelect") || "LUE", cropMask: $("cropMask").checked,
-    minNdvi: $("hideBare").checked ? 0.25 : null, ...extra };
+    minNdvi: $("hideBare").checked ? 0.25 : null, ...(S.soil ? { soil: S.soil, fert: fert() } : {}), ...extra };
 }
 
 /* ---------- data: ramps, guidance, seasons ---------- */
@@ -69,7 +74,7 @@ const GUIDE = {
   SATELLITE: { min: 0, max: 0.3, t: "True colour – no colour ramp applied." },
   NDVI: { min: 0.2, max: 0.9, t: "NDVI saturates in dense paddy; prefer EVI after tillering." },
   EVI: { min: 0.1, max: 0.8, t: "EVI keeps responding in dense canopy – better for tillering to heading." },
-  YIELD: { min: 2, max: 7, t: "Yield estimate (t/ha) from light-use efficiency. Defaults are uncalibrated – treat as relative variability unless a calibrated model is listed." },
+  YIELD: { min: 2, max: 7, t: "Yield (t/ha). A = light-use efficiency (uncalibrated), B = calibrated regression, C = soil-test nutrient model, Fused = min(A, C). Treat uncalibrated methods as relative variability." },
   NDMI: { min: -0.2, max: 0.6, t: "Canopy moisture / field wetness." },
   SAVI: { min: 0.1, max: 0.8, t: "Soil-adjusted – useful early in the season." },
   BSI: { min: -0.2, max: 0.3, t: "High values = exposed soil / fallow." },
@@ -87,8 +92,9 @@ const SEASONS = {
   kharif:     { label: "Kharif (AP/TS/KA) · Jun–Nov", s: [6, 15],  e: [11, 30] },
   rabi:       { label: "Rabi (AP/TS/KA) · Dec–Apr",   s: [12, 1],  e: [4, 30] },
 };
-const MODEL_LABEL = { LUE: "LUE (default)", NDVI_REG: "NDVI regression (calibrated)", INDVI_REG: "Integrated NDVI (calibrated)",
-  LUE_CAL: "LUE (calibrated)", MULTI: "Multi-variable (calibrated)" };
+const MODEL_LABEL = { LUE: "A · LUE empirical (uncalibrated)", NDVI_REG: "B · NDVI regression (calibrated)",
+  INDVI_REG: "B · Integrated NDVI (calibrated)", LUE_CAL: "B · LUE (calibrated)", MULTI: "B · Multi-variable (calibrated)",
+  SOIL: "C · Soil-test nutrient model", FUSED: "Fused · min(LUE, soil)" };
 
 function applySeason(key) {
   const z = SEASONS[key]; if (!z) return;
@@ -108,12 +114,40 @@ function onIndexChange() {
 function applyCropDefaults() { if (val("cropSelect") === "rice") { $("visMin").value = 2; $("visMax").value = 7; } }
 
 async function loadModels() {
+  let list = ["LUE"];
+  try { list = (await api(`/models?crop=${encodeURIComponent(val("cropSelect"))}`, null, { method: "GET" })).models; }
+  catch (_) { /* keep default */ }
+  if (S.soil) list = list.concat(["SOIL", "FUSED"]);
+  const sel = $("modelSelect"), cur = sel.value;
+  sel.innerHTML = list.map((m) => `<option value="${m}">${esc(MODEL_LABEL[m] || m)}</option>`).join("");
+  if (list.includes(cur)) sel.value = cur;
+}
+
+/* ---------- soil data (Method C) ---------- */
+function setSoil(points, msg) {
+  S.soil = points;
+  if (S.soilLayer) { S.map.removeLayer(S.soilLayer); S.soilLayer = null; }
+  if (points) {
+    S.soilLayer = L.layerGroup(points.map((p) => L.circleMarker([p.lat, p.lon], { radius: 5, color: "#3aa3b8", weight: 2, fillOpacity: 0.6 })
+      .bindPopup(`N ${p.avail_n} · P ${p.avail_p} · K ${p.avail_k} kg/ha` + (p.ph != null ? `<br>pH ${Number(p.ph).toFixed(1)}` : "")
+        + (p.ec != null ? ` · EC ${Number(p.ec).toFixed(1)}` : "")))).addTo(S.map);
+  }
+  $("soilInfo").textContent = msg;
+}
+async function onSoilFile(ev) {
+  const f = ev.target.files[0]; if (!f) return;
+  if (f.size > 400 * 1024) { toast("File too large (max 400 KB)"); return; }
   try {
-    const d = await api(`/models?crop=${encodeURIComponent(val("cropSelect"))}`, null, { method: "GET" });
-    const sel = $("modelSelect"), cur = sel.value;
-    sel.innerHTML = d.models.map((m) => `<option value="${m}">${MODEL_LABEL[m] || m}</option>`).join("");
-    if (d.models.includes(cur)) sel.value = cur;
-  } catch (_) { /* keep default */ }
+    const d = await api("/soil/upload", { csv: await f.text() });
+    setSoil(d.points, `${d.n} soil points loaded` + (d.dropped ? ` · ${d.dropped} rows skipped (missing or out-of-range values)` : ""));
+    await loadModels(); $("indexSelect").value = "YIELD"; onIndexChange(); $("modelSelect").value = "SOIL";
+    toast("Soil data loaded – Method C is now available");
+  } catch (e) { toast(e.message, 6000); }
+  finally { ev.target.value = ""; }
+}
+function clearSoil() {
+  setSoil(null, "No soil data loaded. Units: N, P, K in kg/ha (0–15 cm), OC %, pH, EC dS/m.");
+  loadModels();
 }
 
 /* ---------- map ---------- */
@@ -140,11 +174,13 @@ function initMap() {
   S.map.on(L.Draw.Event.EDITED, () => S.drawn.eachLayer(setAoi));
   S.map.on(L.Draw.Event.DELETED, () => { if (!S.drawn.getLayers().length) { S.aoi = null; $("aoiInfo").textContent = "Draw a field with the polygon or rectangle tool."; } });
   S.map.on("click", inspectPoint);
+  S.map.on("mousemove", throttle(onHover, 30));
+  S.map.on("mouseout", () => { $("hoverTip").hidden = true; });
   $("stage").addEventListener("transitionend", () => S.map.invalidateSize());
 }
 
 function setAoi(layer) {
-  S.aoi = layer.toGeoJSON().geometry;
+  S.aoi = layer.toGeoJSON().geometry; S.raster = null;
   const ha = turf.area({ type: "Feature", geometry: S.aoi, properties: {} }) / 1e4;
   $("aoiInfo").innerHTML = `<b>${ha.toFixed(2)} ha</b> · ${(ha * 2.471).toFixed(2)} acres`;
 }
@@ -159,11 +195,47 @@ function addAnalysisLayer(url) {
 function updateLegend() {
   const idx = val("indexSelect"), el = $("legend");
   if (idx === "SATELLITE") { el.style.display = "none"; return; }
-  const unit = idx === "YIELD" ? " t/ha" : idx === "SAR_VH" ? " dB" : "";
   $("legendTitle").textContent = $("indexSelect").selectedOptions[0].text;
   $("legendBar").style.background = `linear-gradient(90deg, ${ramp().map((c) => "#" + c).join(",")})`;
-  $("legendMin").textContent = val("visMin") + unit; $("legendMax").textContent = val("visMax") + unit;
+  $("legendMin").textContent = val("visMin") + unitOf(idx); $("legendMax").textContent = val("visMax") + unitOf(idx);
   el.style.display = "block";
+}
+
+/* ---------- hover raster ---------- */
+async function loadRaster() {
+  S.raster = null;
+  if (val("indexSelect") === "SATELLITE") return;
+  if (S.rasterCtrl) S.rasterCtrl.abort();
+  const ctrl = S.rasterCtrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 115000);
+  try {
+    const r = await fetch("/raster", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload()), signal: ctrl.signal });
+    if (!r.ok) { let m = `Hover data unavailable (${r.status})`; try { m = (await r.json()).error || m; } catch (_) { /* */ } throw new Error(m); }
+    const img = await (await GeoTIFF.fromArrayBuffer(await r.arrayBuffer())).getImage();
+    const data = (await img.readRasters())[0];
+    if (ctrl !== S.rasterCtrl) return;
+    S.raster = { data, w: img.getWidth(), h: img.getHeight(), bbox: img.getBoundingBox(), index: val("indexSelect") };
+    toast("Hover over the field to read values");
+  } catch (e) { if (e.name !== "AbortError") toast(e.message, 4000); }
+  finally { clearTimeout(timer); }
+}
+function rasterValue(lat, lng) {
+  const r = S.raster; if (!r) return null;
+  const [x0, y0, x1, y1] = r.bbox;
+  const c = Math.floor((lng - x0) / (x1 - x0) * r.w), row = Math.floor((y1 - lat) / (y1 - y0) * r.h);
+  if (c < 0 || row < 0 || c >= r.w || row >= r.h) return null;
+  const v = r.data[row * r.w + c];
+  return (!Number.isFinite(v) || v <= -9000) ? null : v;
+}
+function onHover(e) {
+  const tip = $("hoverTip");
+  if (!S.raster || !S.layer || !S.map.hasLayer(S.layer)) { tip.hidden = true; return; }
+  const v = rasterValue(e.latlng.lat, e.latlng.lng);
+  if (v == null) { tip.hidden = true; return; }
+  const i = S.raster.index;
+  tip.textContent = `${i} ${v.toFixed(i === "YIELD" ? 2 : 3)}${unitOf(i)}`;
+  tip.style.left = e.containerPoint.x + 14 + "px"; tip.style.top = e.containerPoint.y + 14 + "px"; tip.hidden = false;
 }
 
 /* ---------- actions ---------- */
@@ -175,7 +247,8 @@ async function run() {
     const idx = val("indexSelect");
     const d = await api("/get_tiles", payload({ min: num("visMin"), max: num("visMax"), colorRamp: idx === "SATELLITE" ? null : ramp() }));
     S.tileUrl = d.tile_url; addAnalysisLayer(d.tile_url); apply3DLayer(); updateLegend();
-    toast("Layer ready – click inside the field to read a value");
+    toast("Layer ready – loading hover values…");
+    loadRaster();                                  // runs in the background
   } catch (e) { toast(e.message, 5000); }
   finally { S.busy = false; $("runBtn").disabled = false; spin(false); }
 }
@@ -183,14 +256,15 @@ async function run() {
 async function inspectPoint(e) {
   if (!S.aoi || !S.layer || !S.map.hasLayer(S.layer)) return;
   if (!turf.booleanPointInPolygon(turf.point([e.latlng.lng, e.latlng.lat]), turf.feature(S.aoi))) return;
+  const rv = rasterValue(e.latlng.lat, e.latlng.lng);
+  if (rv != null) { L.popup().setLatLng(e.latlng).setContent(`<b>${rv.toFixed(3)}</b>${unitOf(S.raster.index)}`).openOn(S.map); return; }
   if (S.valueCtrl) S.valueCtrl.abort();
   S.valueCtrl = new AbortController();
   const popup = L.popup().setLatLng(e.latlng).setContent("Reading value…").openOn(S.map);
   try {
     const d = await api("/value_at", payload({ lat: e.latlng.lat, lng: e.latlng.lng }), { signal: S.valueCtrl.signal });
-    const unit = val("indexSelect") === "YIELD" ? " t/ha" : "";
-    popup.setContent(d.value == null ? "No valid data here (cloud, masked or outside crop)" : `<b>${Number(d.value).toFixed(3)}</b>${unit}`);
-  } catch (err) { if (err.name !== "AbortError") popup.setContent(err.message); }
+    popup.setContent(d.value == null ? "No valid data here (cloud, masked or outside crop)" : `<b>${Number(d.value).toFixed(3)}</b>${unitOf(val("indexSelect"))}`);
+  } catch (err) { if (err.name !== "AbortError") popup.setContent(esc(err.message)); }
 }
 
 async function download() {
@@ -212,13 +286,13 @@ function renderKpis(d) {
   const cards = [
     [`${k} mean`, f2(mean) + (isY ? " t/ha" : "")],
     ["P10 – P90", `${f2(s[k + "_p10"])} – ${f2(s[k + "_p90"])}`],
-    [tr("area") || "Field area", `${f2(d.area_ha)} ha · ${f2(d.area_ha * 2.471, 1)} ac`],
-    ["Clear-sky coverage", d.valid_fraction != null ? Math.round(d.valid_fraction * 100) + "%" : "–"],
+    ["Field area", `${f2(d.area_ha)} ha · ${f2(d.area_ha * 2.471, 1)} ac`],
+    ["Valid-data coverage", d.valid_fraction != null ? Math.round(d.valid_fraction * 100) + "%" : "–"],
   ];
   if (isY && mean != null) cards.push(["Yield", `${f2(mean * 404.7, 0)} kg/acre`]);
   if (d.production_t != null) cards.push(["Est. production", f2(d.production_t, 1) + " t"]);
-  if (isY) cards.push(["Model", MODEL_LABEL[d.model] || d.model]);
-  $("kpis").innerHTML = cards.map(([t, v]) => `<div class="kpi"><small>${t}</small><b>${v}</b></div>`).join("");
+  if (isY) cards.push(["Method", MODEL_LABEL[d.model] || d.model]);
+  $("kpis").innerHTML = cards.map(([t, v]) => `<div class="kpi"><small>${esc(t)}</small><b>${esc(v)}</b></div>`).join("");
 }
 
 function renderSeries(d) {
@@ -255,9 +329,9 @@ async function compareModels() {
   try {
     const d = await api("/yield_compare", payload({ index: "YIELD" }), { timeout: 115000 });
     const rows = Object.entries(d.models).map(([m, r]) => r.error
-      ? `<tr><td>${MODEL_LABEL[m] || m}</td><td colspan="2" class="err">${r.error}</td></tr>`
-      : `<tr><td>${MODEL_LABEL[m] || m}</td><td>${f2(r.stats.YIELD_mean)} t/ha</td><td>${f2(r.production_t, 1)} t</td></tr>`).join("");
-    $("compareBox").innerHTML = `<table><tr><th>Model</th><th>Mean</th><th>Total</th></tr>${rows}</table>`;
+      ? `<tr><td>${esc(MODEL_LABEL[m] || m)}</td><td colspan="2" class="err">${esc(r.error)}</td></tr>`
+      : `<tr><td>${esc(MODEL_LABEL[m] || m)}</td><td>${f2(r.stats.YIELD_mean)} t/ha</td><td>${f2(r.production_t, 1)} t</td></tr>`).join("");
+    $("compareBox").innerHTML = `<table><tr><th>Method</th><th>Mean</th><th>Total</th></tr>${rows}</table>`;
   } catch (e) { $("compareBox").textContent = e.message; }
 }
 
@@ -296,8 +370,9 @@ async function sendChat() {
   const q = val("chatInput").trim(); if (!q) return;
   $("chatInput").value = ""; chatLine("u", "You: " + q);
   const wait = chatLine("t", "Thinking…");
-  const ctx = [`Index: ${val("indexSelect")}`, `Crop: ${val("cropSelect")}`, `Model: ${val("modelSelect")}`,
-    `Season: ${val("startDate")} to ${val("endDate")}`, S.last ? `Stats: ${JSON.stringify(S.last)}` : "No stats computed yet"].join("\n");
+  const ctx = [`Index: ${val("indexSelect")}`, `Crop: ${val("cropSelect")}`, `Method: ${val("modelSelect")}`,
+    `Season: ${val("startDate")} to ${val("endDate")}`, `Soil points loaded: ${S.soil ? S.soil.length : 0}`,
+    S.last ? `Stats: ${JSON.stringify(S.last)}` : "No stats computed yet"].join("\n");
   try {
     const d = await api("/ask_gemini", { prompt: q, stats_context: ctx }, { timeout: 40000 });
     const txt = d.candidates && d.candidates[0] && d.candidates[0].content.parts[0].text;
@@ -387,6 +462,10 @@ document.addEventListener("DOMContentLoaded", () => {
   $("toggleLayer").onchange = (e) => { if (!S.layer) return; e.target.checked ? S.layer.addTo(S.map) : S.map.removeLayer(S.layer); };
   S.map.on("overlayadd", (e) => { if (e.layer === S.layer) $("toggleLayer").checked = true; });
   S.map.on("overlayremove", (e) => { if (e.layer === S.layer) $("toggleLayer").checked = false; });
+
+  $("soilFile").onchange = onSoilFile;
+  $("soilTpl").onclick = () => window.open("/soil/template", "_blank");
+  $("soilClear").onclick = clearSoil;
 
   $("runBtn").onclick = run; $("analyticsBtn").onclick = openAnalytics; $("downloadBtn").onclick = download;
   $("viewBtn").onclick = toggle3D;
