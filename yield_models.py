@@ -1,5 +1,8 @@
 """yield_models.py - Sentinel-2 / ERA5-Land crop-yield helpers for PRITHVI.
 
+Method A: LUE (empirical/biophysical)   Method B: calibrated NDVI/spectral regressions
+Method C: soil-test model (soil_model.py), optionally FUSED = min(A, C).
+
 From the MDPI e-book 'Recent Advances in Remote Sensing for Crop Growth Monitoring' (2016):
   rice base temperature 12 C and fAPAR ceiling 0.95 (Guo et al.); NWDWI flood index
   (Shi & Huang); time-integrated NDVI predictor (Hao et al.); 10-day phenology windows
@@ -12,16 +15,17 @@ import os
 
 import ee
 
-STEP, PAD = 10, 5                       # composite step / padding (days)
-KEEP_SCL = [4, 5, 6, 7]                 # vegetation, bare, WATER (needed for paddy), unclassified
-NWDWI_A = 2.0                           # weight on green band (Shi & Huang)
-FAPAR_SLOPE, FAPAR_INT, FAPAR_MAX = 1.25, 0.17, 0.95
-PAR_FRAC = 0.48                         # PAR share of global radiation
-ERA = "ECMWF/ERA5_LAND/DAILY_AGGR"
-DEFAULT_SSRD_J, DEFAULT_T_C = 18e6, 27.0  # fallbacks when ERA5-Land lags real time
+import soil_model as sm
 
-# tb/to/tx: base/optimum/max temperature (C); rue: g DM per MJ intercepted PAR;
-# hi: harvest index; ymax: clamp for plausible yield (t/ha)
+STEP, PAD = 10, 5
+KEEP_SCL = [4, 5, 6, 7]
+NWDWI_A = 2.0
+FAPAR_SLOPE, FAPAR_INT, FAPAR_MAX = 1.25, 0.17, 0.95
+PAR_FRAC = 0.48
+ERA = "ECMWF/ERA5_LAND/DAILY_AGGR"
+DEFAULT_SSRD_J, DEFAULT_T_C = 18e6, 27.0
+SOIL_MODELS = ("SOIL", "FUSED")
+
 CROP_CFG = {"crops": {
     "rice":    dict(tb=12, to=28, tx=38, rue=2.2, hi=0.45, ymax=9.0, paddy=True),
     "wheat":   dict(tb=0,  to=20, tx=32, rue=2.8, hi=0.42, ymax=8.0),
@@ -43,6 +47,7 @@ CAL = _load_cal()
 
 
 def available_models(crop):
+    """LUE plus any calibrated model present in calibration.json (soil models are added by the UI)."""
     cal = CAL.get(crop, {})
     return ["LUE"] + [m for m in ("NDVI_REG", "INDVI_REG", "LUE_CAL", "MULTI") if m in cal]
 
@@ -100,8 +105,7 @@ def _median_or_empty(col, bands):
 
 
 def composites(col, bands, start, end, step=STEP, pad=PAD):
-    """Moving-median composites (window = step + 2*pad days, stepping every `step` days).
-    Windows with no clear scene come back fully masked."""
+    """Moving-median composites (window = step + 2*pad days). Empty windows come back fully masked."""
     bands = [bands] if isinstance(bands, str) else list(bands)
     col = col.select(bands)
     s = ee.Date(start)
@@ -148,7 +152,7 @@ def _ft(t, cfg):
 # ------------------------------------------------------------------ features & masks
 def season_features(aoi, start, end, cfg, step=STEP):
     """Bands: apar (MJ/m2 effective), indvi, ndvi_max, ndmi_mean, bsi_pre.
-    Gap windows are compensated by scaling with n_windows / n_valid; pixels with <50% valid windows are masked."""
+    Gap windows are compensated by n_windows / n_valid; pixels with <50% valid windows are masked."""
     comp = composites(get_collection(aoi, start, end), ["NDVI", "NDMI"], start, end, step)
     n = comp.size()
 
@@ -165,7 +169,7 @@ def season_features(aoi, start, end, cfg, step=STEP):
     pre = get_collection(aoi, start, ee.Date(start).advance(30, "day")).select("BSI")
     feats = ee.Image.cat([
         w.select("apar").sum().multiply(k).rename("apar"),
-        w.select("NDVI").sum().multiply(k).multiply(step).rename("indvi"),   # NDVI x days
+        w.select("NDVI").sum().multiply(k).multiply(step).rename("indvi"),
         w.select("NDVI").max().rename("ndvi_max"),
         w.select("NDMI").mean().rename("ndmi_mean"),
         _median_or_empty(pre, ["BSI"]).rename("bsi_pre"),
@@ -181,25 +185,40 @@ def crop_mask_img(aoi, start, end, cfg):
 
 
 # ------------------------------------------------------------------ yield
-def yield_image(aoi, start, end, crop, model, crop_mask):
+def yield_image(aoi, start, end, crop, model, crop_mask, soil=None, fert=None):
     cfg = CROP_CFG["crops"].get(crop)
     if cfg is None:
         raise ValueError(f"Unknown crop '{crop}'")
     model = str(model).upper()
-    if model not in available_models(crop):
-        raise ValueError(f"Model {model} is not calibrated for {crop}. Add coefficients to calibration.json "
-                         f"or use LUE.")
+    if model not in available_models(crop) and model not in SOIL_MODELS:
+        raise ValueError(f"Model {model} is not calibrated for {crop}. Add coefficients to "
+                         f"calibration.json or use LUE.")
+    cal_crop = CAL.get(crop, {})
+
+    ys = None
+    if model in SOIL_MODELS:
+        if not soil:
+            raise ValueError("Upload soil data first (Method C needs soil-test points).")
+        ys = sm.soil_yield(aoi, cfg, soil, fert or {}, cal_crop.get("SOIL"))
+        if model == "SOIL":                       # soil-only: no satellite features needed
+            y = ys
+            if crop_mask:
+                y = y.updateMask(crop_mask_img(aoi, start, end, cfg))
+            return y.clamp(0, cfg["ymax"]).rename("YIELD").clip(aoi)
+
     f = season_features(aoi, start, end, cfg)
-    cal = CAL.get(crop, {}).get(model, {})
-    if model == "LUE":                       # MJ/m2 x g/MJ x HI -> g/m2 ; x0.01 -> t/ha
+    cal = cal_crop.get(model, {})
+    if model in ("LUE", "FUSED"):                 # MJ/m2 x g/MJ x HI -> g/m2 ; x0.01 -> t/ha
         y = f.select("apar").multiply(cfg["rue"] * cfg["hi"] * 0.01)
+        if model == "FUSED":                      # potential (light) capped by nutrient supply
+            y = y.min(ys)
     elif model == "LUE_CAL":
         y = f.select("apar").multiply(cal["k"])
     elif model == "NDVI_REG":
         y = f.select("ndvi_max").multiply(cal["b"]).add(cal["a"])
     elif model == "INDVI_REG":
         y = f.select("indvi").multiply(cal["b"]).add(cal["a"])
-    else:                                    # MULTI
+    else:                                         # MULTI
         y = ee.Image.constant(cal["intercept"])
         for name, c in cal["coef"].items():
             y = y.add(f.select(name).multiply(c))
