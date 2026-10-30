@@ -5,3 +5,5 @@ __pycache__/
 *.pyc
 service_account_key.json
 private_key.json
+*-key*.json
+.DS_Store
