@@ -603,3 +603,9 @@ border:1px solid var(--line);padding:10px 20px;border-radius:10px;font-weight:50
   .pill{padding:9px 12px;font-size:13px}
   .chat-fab{bottom:130px}.chat{bottom:130px}
 }
+.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:4px}
+.mini{background:#17301f;color:var(--grain);border:1px solid var(--line);border-radius:6px;padding:6px;font-size:11px}
+input[type=file]{width:100%;font-size:12px;color:var(--muted)}
+.hover-tip{position:absolute;z-index:1350;pointer-events:none;background:rgba(14,31,23,.92);
+border:1px solid var(--line);border-radius:6px;padding:3px 8px;font-size:12px;color:var(--text);white-space:nowrap}
+.hover-tip[hidden]{display:none}
