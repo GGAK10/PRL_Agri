@@ -56,11 +56,28 @@
       </select>
       <div class="row2">
         <select id="cropSelect" aria-label="Crop">{% for c in crops %}<option value="{{ c }}">{{ c|capitalize }}</option>{% endfor %}</select>
-        <select id="modelSelect" aria-label="Model"><option value="LUE">LUE (default)</option></select>
+        <select id="modelSelect" aria-label="Yield method"><option value="LUE">A · LUE empirical</option></select>
       </div>
       <label class="chk"><input type="checkbox" id="cropMask" checked> Crop / paddy mask</label>
       <label class="chk"><input type="checkbox" id="hideBare"> Hide NDVI &lt; 0.25</label>
       <div id="guide" class="guide"></div>
+    </section>
+
+    <section class="sec">
+      <label>Soil data · Method C</label>
+      <input type="file" id="soilFile" accept=".csv,text/csv">
+      <div class="row2">
+        <button id="soilTpl" class="mini" type="button">CSV template</button>
+        <button id="soilClear" class="mini" type="button">Clear soil data</button>
+      </div>
+      <div id="soilInfo" class="hint">No soil data loaded. Units: N, P, K in kg/ha (0–15 cm), OC %, pH, EC dS/m.</div>
+      <label>Fertiliser applied (kg/ha)</label>
+      <div class="row3">
+        <input type="number" id="fertN" value="120" min="0" step="5" aria-label="N kg/ha" title="N">
+        <input type="number" id="fertP" value="40" min="0" step="5" aria-label="P2O5 kg/ha" title="P₂O₅">
+        <input type="number" id="fertK" value="40" min="0" step="5" aria-label="K2O kg/ha" title="K₂O">
+      </div>
+      <div class="hint">Order: N · P₂O₅ · K₂O</div>
     </section>
 
     <section class="sec">
@@ -82,6 +99,7 @@
   <div id="stage">
     <div id="map"></div>
     <div id="cesiumContainer"></div>
+    <div id="hoverTip" class="hover-tip" hidden></div>
 
     <button id="sidebarToggle" title="Menu">☰</button>
 
@@ -109,7 +127,7 @@
       <div id="seriesBox" hidden><div class="chart-wrap"><canvas id="tsChart"></canvas></div></div>
       <div id="peakInfo" class="hint"></div>
       <div class="panel-actions">
-        <button id="csvBtn">CSV</button><button id="imgBtn">PNG</button><button id="compareBtn">Compare models</button>
+        <button id="csvBtn">CSV</button><button id="imgBtn">PNG</button><button id="compareBtn">Compare methods</button>
       </div>
       <div id="compareBox"></div>
     </div>
@@ -131,7 +149,7 @@
     <button id="aboutClose" class="modal-x" aria-label="Close">×</button>
     <h3>About</h3>
     <p>Sentinel-2 (10 m optical), Sentinel-1 (radar), ERA5-Land (radiation, temperature) and ESA WorldCover via Google Earth Engine.</p>
-    <p><b>Yield</b> is a light-use-efficiency estimate unless a calibrated model is selected. Default parameters are generic starting values: calibrate against local crop-cutting data before using numbers operationally.</p>
+    <p><b>Yield methods.</b> A: light-use-efficiency estimate (uncalibrated unless stated). B: regressions calibrated on local crop-cutting data (appear only when calibrated). C: nutrient-limited yield from uploaded soil tests (default coefficients are placeholders); Fused = minimum of A and C.</p>
     <p><b>Paddy mask</b> keeps pixels that were flooded and later green during the season (NWDWI ≤ 0, then NDVI ≥ 0.5).</p>
   </div>
 </div>
@@ -140,6 +158,7 @@
 <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script src="https://cdn.jsdelivr.net/npm/geotiff@2.1.3/dist-browser/geotiff.js"></script>
 <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
 </html>
