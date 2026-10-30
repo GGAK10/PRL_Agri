@@ -1,9 +1,14 @@
 {
-  "_readme": "Add per-crop blocks, e.g. \"rice\": {...}. Models appear in the UI only when present here.",
+  "_readme": "Add per-crop blocks, e.g. \"rice\": {...}. Models appear in the UI only when present here. Values below are placeholders: generate real ones with tools/fit_calibration.py.",
   "_example_rice": {
     "NDVI_REG":  {"a": 0.0, "b": 0.0},
     "INDVI_REG": {"a": 0.0, "b": 0.0},
     "LUE_CAL":   {"k": 0.0},
-    "MULTI":     {"intercept": 0.0, "coef": {"ndvi_max": 0.0, "indvi": 0.0, "ndmi_mean": 0.0, "bsi_pre": 0.0}}
+    "MULTI":     {"intercept": 0.0, "coef": {"ndvi_max": 0.0, "indvi": 0.0, "ndmi_mean": 0.0, "bsi_pre": 0.0}},
+    "SOIL": {
+      "supply": {"N": {"a": 0.0, "b": 0.20}, "P": {"a": 0.0, "b": 0.70}, "K": {"a": 0.0, "b": 0.35}},
+      "rf": {"N": 0.40, "P": 0.20, "K": 0.40},
+      "ie": {"N": 55.0, "P": 330.0, "K": 65.0}
+    }
   }
 }
