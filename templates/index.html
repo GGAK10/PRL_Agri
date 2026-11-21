@@ -1,164 +1,169 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PRITHVI · Paddy Intelligence</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&family=Noto+Sans+Tamil&family=Noto+Sans+Telugu&family=Noto+Sans+Kannada&family=Noto+Sans+Malayalam&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Dashboard – PRITHVI RESEARCH LABS</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css"/>
+    <link rel="stylesheet" href="https://cesium.com/downloads/cesiumjs/releases/1.114/Build/Cesium/Widgets/widgets.css">
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+    <script src="https://cesium.com/downloads/cesiumjs/releases/1.114/Build/Cesium/Cesium.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        // Optional: free token from https://cesium.com/ion (enables 3D terrain). Leave empty to skip terrain.
+        window.CESIUM_ION_TOKEN = "";
+    </script>
 </head>
-<body class="sb-open">
-<div id="app">
+<body>
+<div id="container">
 
-  <aside id="sidebar">
-    <div class="sb-head">
-      <svg width="34" height="34" viewBox="0 0 32 32" aria-hidden="true">
-        <path d="M16 3c1 6 1 12 0 26" stroke="#e6b84a" stroke-width="2" fill="none"/>
-        <ellipse cx="11" cy="10" rx="3" ry="6" transform="rotate(-25 11 10)" fill="#e6b84a"/>
-        <ellipse cx="21" cy="12" rx="3" ry="6" transform="rotate(25 21 12)" fill="#e6b84a"/>
-        <ellipse cx="11" cy="19" rx="3" ry="6" transform="rotate(-25 11 19)" fill="#4caf6a"/>
-        <ellipse cx="21" cy="21" rx="3" ry="6" transform="rotate(25 21 21)" fill="#4caf6a"/>
-      </svg>
-      <div><div class="brand">PRITHVI</div><div class="sub">Paddy Intelligence · South India</div></div>
-      <select id="langSelect" title="Language">
-        <option value="en">EN</option><option value="ta">தமிழ்</option><option value="te">తెలుగు</option>
-        <option value="kn">ಕನ್ನಡ</option><option value="ml">മലയാളം</option>
-      </select>
+    <!-- ============ SIDEBAR ============ -->
+    <div id="sidebar" class="sidebar-collapsed">
+        <button id="sidebarToggle" title="Menu"><span id="chevron" class="chevron chevron-right">&#x25B6;</span></button>
+        <div id="sidebarContent">
+            <div class="sidebar-header">
+                <svg height="32" width="32" viewBox="0 0 32 32">
+                    <ellipse cx="16" cy="20" rx="13" ry="9" fill="#43d375"/>
+                    <path d="M16,6 Q18,17 16,30 Q14,17 16,6" fill="#328b42"/>
+                    <circle cx="16" cy="12" r="4" fill="#aee99b"/>
+                </svg>
+                <span class="sidebar-title">PRITHVI Dashboard</span>
+            </div>
+
+            <div class="compact-form-row">
+                <label for="indexSelect" title="Select analysis layer">Layer</label>
+                <select id="indexSelect">
+                    <option value="SATELLITE">True Color Satellite</option>
+                    <option value="NDVI">NDVI (Vegetation)</option>
+                    <option value="YIELD" selected>Crop Yield (t/ha)</option>
+                    <option value="BSI">BSI (Bare Soil)</option>
+                    <option value="SAVI">SAVI (Adjusted Veg)</option>
+                    <option value="NDSI">NDSI* (SWIR/NIR moisture)</option>
+                </select>
+            </div>
+            <div class="compact-form-row">
+                <label for="colorRamp" title="Color ramp for map">Colors</label>
+                <select id="colorRamp">
+                    <option value="default">Viridis</option>
+                    <option value="redgreen">Red-Yellow-Green</option>
+                    <option value="bluered">Blue-Red</option>
+                    <option value="earth">Earth</option>
+                </select>
+            </div>
+            <div class="compact-form-row">
+                <label for="visMin" title="Min value for color scale">Min</label>
+                <input type="number" id="visMin" value="1.0" step="0.1">
+                <label for="visMax" title="Max value for color scale">Max</label>
+                <input type="number" id="visMax" value="5.0" step="0.1">
+            </div>
+
+            <div id="indexGuidance" class="info-box"></div>
+
+            <div class="compact-form-row">
+                <label for="startDate">From</label>
+                <input type="date" id="startDate" value="2026-04-01">
+            </div>
+            <div class="compact-form-row">
+                <label for="endDate">To</label>
+                <input type="date" id="endDate" value="2026-11-21">
+            </div>
+
+            <div id="dataNotice" class="info-box notice-box" style="display:none;"></div>
+
+            <div class="check-row">
+                <label><input type="checkbox" id="toggleAnalysisLayer" checked> Show Analysis Layer</label>
+            </div>
+            <div class="check-row">
+                <label><input type="checkbox" id="toggleLiveChart"> Live Trend / Stats Panel</label>
+            </div>
+
+            <div class="sidebar-actions">
+                <button id="statsBtn" title="Show statistics & charts">📊 Stats</button>
+                <button id="aboutBtn" title="About/Help">❓ About</button>
+            </div>
+
+            <div class="opacity-row">
+                <label for="opacitySlider">Transparency</label>
+                <input type="range" min="0" max="100" value="70" step="1" id="opacitySlider">
+                <span id="opacityValue">0.70</span>
+            </div>
+        </div>
     </div>
 
-    <section class="sec"><div id="aoiInfo" class="aoi">Draw a field with the polygon or rectangle tool.</div></section>
+    <!-- ============ FIELD ANALYTICS PANEL (draggable) ============ -->
+    <div id="onMapChartContainer" class="map-overlay-panel">
+        <div id="onMapChartContainerHeader" class="panel-header">
+            <span>FIELD ANALYTICS</span>
+            <span id="closeOverlay" title="Close">&times;</span>
+        </div>
+        <div id="mapOverlayBody">
+            <div id="statsArea">Draw an AOI and click Run, then open Stats.</div>
+            <div class="chart-wrap"><canvas id="miniTsChart"></canvas></div>
+            <div class="panel-buttons">
+                <button id="statsDownloadBtn" class="btn-outline">CSV</button>
+                <button id="chartDownloadBtn" class="btn-solid">IMG</button>
+            </div>
+        </div>
+    </div>
 
-    <section class="sec">
-      <label for="seasonSelect" data-i18n="season">Season</label>
-      <select id="seasonSelect"></select>
-      <div class="row2">
-        <input type="date" id="startDate" aria-label="From">
-        <input type="date" id="endDate" aria-label="To">
-      </div>
-      <div class="hint">Start a little before transplanting so flooding is captured. For yield: From = sowing/transplanting, To = harvest.</div>
-    </section>
-
-    <section class="sec">
-      <label for="indexSelect" data-i18n="layer">Layer</label>
-      <select id="indexSelect">
-        <option value="SATELLITE">True colour</option>
-        <option value="NDVI">NDVI (greenness)</option>
-        <option value="EVI">EVI (dense paddy)</option>
-        <option value="YIELD" selected>Crop yield (t/ha)</option>
-        <option value="NDMI">NDMI (canopy moisture)</option>
-        <option value="SAVI">SAVI</option>
-        <option value="BSI">BSI (bare soil)</option>
-        <option value="NWDWI">Flooding / transplanting (NWDWI)</option>
-        <option value="SAR_VH">Radar VH (cloud-free)</option>
-      </select>
-      <div class="row2">
-        <select id="cropSelect" aria-label="Crop">{% for c in crops %}<option value="{{ c }}">{{ c|capitalize }}</option>{% endfor %}</select>
-        <select id="modelSelect" aria-label="Yield method"><option value="LUE">A · LUE empirical</option></select>
-      </div>
-      <label class="chk"><input type="checkbox" id="cropMask" checked> Crop / paddy mask</label>
-      <label class="chk"><input type="checkbox" id="hideBare"> Hide NDVI &lt; 0.25</label>
-      <div id="guide" class="guide"></div>
-    </section>
-
-    <section class="sec">
-      <label>Soil data · Method C</label>
-      <input type="file" id="soilFile" accept=".csv,text/csv">
-      <div class="row2">
-        <button id="soilTpl" class="mini" type="button">CSV template</button>
-        <button id="soilClear" class="mini" type="button">Clear soil data</button>
-      </div>
-      <div id="soilInfo" class="hint">No soil data loaded. Units: N, P, K in kg/ha (0–15 cm), OC %, pH, EC dS/m.</div>
-      <label>Fertiliser applied (kg/ha)</label>
-      <div class="row3">
-        <input type="number" id="fertN" value="120" min="0" step="5" aria-label="N kg/ha" title="N">
-        <input type="number" id="fertP" value="40" min="0" step="5" aria-label="P2O5 kg/ha" title="P₂O₅">
-        <input type="number" id="fertK" value="40" min="0" step="5" aria-label="K2O kg/ha" title="K₂O">
-      </div>
-      <div class="hint">Order: N · P₂O₅ · K₂O</div>
-    </section>
-
-    <section class="sec">
-      <select id="rampSelect">
-        <option value="paddy">Paddy growth (soil → green)</option><option value="viridis">Viridis</option>
-        <option value="redgreen">Red–Green</option><option value="bluered">Blue–Red</option><option value="earth">Earth</option>
-      </select>
-      <div class="row2">
-        <input type="number" id="visMin" step="0.1" aria-label="Min">
-        <input type="number" id="visMax" step="0.1" aria-label="Max">
-      </div>
-      <label for="opacity">Transparency <span id="opacityVal">0.70</span></label>
-      <input type="range" id="opacity" min="0" max="100" value="70">
-      <label class="chk"><input type="checkbox" id="toggleLayer" checked> Show analysis layer</label>
-      <button id="aboutBtn" class="link">About &amp; data sources</button>
-    </section>
-  </aside>
-
-  <div id="stage">
+    <!-- ============ MAPS ============ -->
     <div id="map"></div>
-    <div id="cesiumContainer"></div>
-    <div id="hoverTip" class="hover-tip" hidden></div>
+    <div id="cesiumContainer" style="display:none;"></div>
 
-    <button id="sidebarToggle" title="Menu">☰</button>
-
-    <div id="searchPanel">
-      <input id="searchBox" type="text" placeholder="Place or lat,lng" autocomplete="off">
-      <button id="searchBtn" title="Go">🔍</button>
+    <div id="fab-bar">
+        <button id="runBtn" class="fab" title="Analyze AOI">Run</button>
+        <button id="downloadBtn" class="fab" title="Download GeoTIFF">⬇</button>
+        <button id="switchViewBtn" class="fab" title="Toggle 2D/3D">3D</button>
     </div>
 
-    <div id="fabBar">
-      <button id="runBtn" class="pill primary"><span data-i18n="run">Run</span></button>
-      <button id="analyticsBtn" class="pill"><span data-i18n="analytics">Analytics</span></button>
-      <button id="downloadBtn" class="pill"><span data-i18n="download">Download</span></button>
-      <button id="viewBtn" class="pill">3D</button>
+    <div id="search-panel">
+        <input type="text" id="searchBox" placeholder="Place or Lat,Lng" autocomplete="off">
+        <button id="searchBtn" title="Go">🔍</button>
     </div>
 
-    <div id="legend" class="legend">
-      <div id="legendTitle" class="legend-title"></div>
-      <div id="legendBar" class="legend-bar"></div>
-      <div class="legend-scale"><span id="legendMin"></span><span id="legendMax"></span></div>
+    <!-- ============ AI CHAT ============ -->
+    <div id="ai-chat-launch" title="Chat with PRITHVI AI">💬</div>
+    <div id="ai-chat-panel">
+        <div id="ai-chat-bar">
+            <span>PRITHVI AI Assistant</span>
+            <span id="ai-chat-close" title="Close">&times;</span>
+        </div>
+        <div id="ai-chat-messages"></div>
+        <div id="ai-chat-input-row">
+            <input id="ai-chat-input" type="text" placeholder="Ask about yield, NDVI, BSI..." autocomplete="off"/>
+            <button id="ai-chat-send" title="Send">⮞</button>
+        </div>
     </div>
 
-    <div id="panel" class="panel" hidden>
-      <div id="panelHead" class="panel-head"><span>FIELD ANALYTICS</span><button id="panelClose" aria-label="Close">×</button></div>
-      <div id="kpis" class="kpi-grid"></div>
-      <div id="seriesBox" hidden><div class="chart-wrap"><canvas id="tsChart"></canvas></div></div>
-      <div id="peakInfo" class="hint"></div>
-      <div class="panel-actions">
-        <button id="csvBtn">CSV</button><button id="imgBtn">PNG</button><button id="compareBtn">Compare methods</button>
-      </div>
-      <div id="compareBox"></div>
+    <div id="hoverValue" class="hover-value-box" style="display:none;"></div>
+    <div id="copyright-footer">&copy; 2026 PRITHVI RESEARCH LABS</div>
+    <div id="toast" class="toast"></div>
+    <div id="spinner" class="spinner-overlay" style="display:none;">
+        <div class="spinner"></div>
+        <div class="spinner-msg" id="spinner-msg"></div>
     </div>
 
-    <button id="chatBtn" class="chat-fab" title="Ask PRITHVI">💬</button>
-    <div id="chatPanel" class="chat" hidden>
-      <div class="chat-head"><span>PRITHVI Assistant</span><button id="chatClose" aria-label="Close">×</button></div>
-      <div id="chatLog" class="chat-log"></div>
-      <div class="chat-row"><input id="chatInput" placeholder="Ask about this field…" autocomplete="off"><button id="chatSend">➤</button></div>
+    <!-- ============ ABOUT MODAL ============ -->
+    <div id="aboutModal" class="modal">
+        <div class="modal-content">
+            <span class="close-modal" id="closeAboutModal">&times;</span>
+            <div style="font-weight:bold;margin-bottom:8px;">About</div>
+            <p style="font-size:15px;line-height:1.7;">
+                AOI-based time-series vegetation, soil and yield mapping from Sentinel-2 (10 m, open data).<br>
+                <b>Indices:</b> NDVI, SAVI, BSI, NDSI*<br>
+                <b>Yield:</b> Y = (6 × NDVI<sub>peak</sub> − 1) × F<sub>variety</sub> × F<sub>irrigation</sub> × calibration,
+                using the 90th-percentile NDVI of the selected season.<br>
+                <b>Dates:</b> if too few clear scenes exist, the server widens the date range / cloud limit automatically and tells you what it used.<br>
+                <b>Features:</b> draw AOI, run analysis, GeoTIFF download, place search, 3D view, live stats and trend chart.<br>
+                <small>*NDSI here is (SWIR − NIR)/(SWIR + NIR), a moisture index, not true snow NDSI.</small>
+            </p>
+        </div>
     </div>
-  </div>
 </div>
-
-<div id="toast" class="toast" role="status"></div>
-<div id="spinner" class="spinner-overlay" style="display:none"><div class="spinner"></div><div id="spinnerMsg" class="spinner-msg"></div></div>
-
-<div id="aboutModal" class="modal" hidden>
-  <div class="modal-box">
-    <button id="aboutClose" class="modal-x" aria-label="Close">×</button>
-    <h3>About</h3>
-    <p>Sentinel-2 (10 m optical), Sentinel-1 (radar), ERA5-Land (radiation, temperature) and ESA WorldCover via Google Earth Engine.</p>
-    <p><b>Yield methods.</b> A: light-use-efficiency estimate (uncalibrated unless stated). B: regressions calibrated on local crop-cutting data (appear only when calibrated). C: nutrient-limited yield from uploaded soil tests (default coefficients are placeholders); Fused = minimum of A and C.</p>
-    <p><b>Paddy mask</b> keeps pixels that were flooded and later green during the season (NWDWI ≤ 0, then NDVI ≥ 0.5).</p>
-  </div>
-</div>
-
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
-<script src="https://cdn.jsdelivr.net/npm/geotiff@2.1.3/dist-browser/geotiff.js"></script>
-<script src="{{ url_for('static', filename='js/main.js') }}"></script>
+<script src="/static/js/main.js"></script>
 </body>
 </html>
